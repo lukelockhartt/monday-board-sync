@@ -31,7 +31,7 @@ jobs:
           MONDAY_API_TOKEN: ${{ secrets.MONDAY_API_TOKEN }}
           SOURCE_BOARD_ID: ${{ secrets.SOURCE_BOARD_ID }}
           DEST_BOARD_ID: ${{ secrets.DEST_BOARD_ID }}
-          CLIENT_ID_COLUMN: ${{ secrets.CLIENT_ID_COLUMN }}
+          SOURCE_ITEM_ID_COLUMN: ${{ secrets.SOURCE_ITEM_ID_COLUMN }}
         run: |
           python monday_sync.py
       
