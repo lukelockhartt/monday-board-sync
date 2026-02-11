@@ -330,9 +330,9 @@ def main():
     """Main entry point"""
     # Load configuration from environment variables
     api_token = os.getenv("MONDAY_API_TOKEN")
-    source_board_id = os.getenv("SOURCE_BOARD_ID", "18269603341")
+    source_board_id = os.getenv("SOURCE_BOARD_ID", "18388403129")
     dest_board_id = os.getenv("DEST_BOARD_ID", "18399599376")
-    client_id_column = os.getenv("CLIENT_ID_COLUMN", "pulse_id_mkxvh6ca")
+    client_id_column = os.getenv("CLIENT_ID_COLUMN", "text_mkxykxdr")
     
     if not api_token:
         logger.error("MONDAY_API_TOKEN environment variable not set!")
