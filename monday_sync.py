@@ -10,6 +10,10 @@ import requests
 import logging
 from typing import Dict, List, Optional, Any
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -26,15 +30,24 @@ logger = logging.getLogger(__name__)
 class MondaySync:
     """Handles syncing between two Monday.com boards"""
     
-    def __init__(self, api_token: str, source_board_id: str, dest_board_id: str, client_id_column: str):
+    def __init__(self, api_token: str, source_board_id: str, dest_board_id: str, source_item_id_column: str = "text_mm034248"):
         self.api_token = api_token
         self.source_board_id = source_board_id
         self.dest_board_id = dest_board_id
-        self.client_id_column = client_id_column
+        self.source_item_id_column = source_item_id_column  # Column ID on destination board to store source item ID
         self.api_url = "https://api.monday.com/v2"
         self.headers = {
             "Authorization": api_token,
             "Content-Type": "application/json"
+        }
+        
+        # Column ID mapping: source_column_id -> dest_column_id
+        # This maps columns from source board to destination board when IDs differ
+        self.column_id_mapping = {
+            "color_mkxvck6q": "color_mky65vg4",  # completion_status mapping
+            "color_mkz65kcy": "color_mkz6b7jw",  # vendor mapping
+            "date_mkymkaxn": "date_mkyme73s",    # date sold mapping
+            "file_mkz6gc9z": "file_mkz618tm"     # file column mapping
         }
         
     def _execute_query(self, query: str, variables: Optional[Dict] = None) -> Dict:
@@ -185,50 +198,91 @@ class MondaySync:
             if not raw_value or raw_value == "null":
                 continue
             
+            # Skip auto-calculated columns that can't be synced
+            if col_type in ["formula", "auto_number", "item_id"]:
+                continue
+            
             try:
                 # Parse the JSON value
                 parsed_value = json.loads(raw_value) if isinstance(raw_value, str) else raw_value
                 
+                # Map source column ID to destination column ID if mapping exists
+                dest_col_id = self.column_id_mapping.get(col_id, col_id)
+                
+                # DEBUG: Log completion_status and all status columns
+                if col_id == "color_mkxvck6q" or col_type == "status":
+                    logger.info(f"  Column '{col_id}' ({col_type}): text='{col_value['text']}', value={raw_value}")
+                    if col_id in self.column_id_mapping:
+                        logger.info(f"  >> MAPPED to destination column: '{dest_col_id}'")
+                
                 # Handle different column types
                 if col_type == "text":
-                    column_values[col_id] = col_value["text"]
+                    column_values[dest_col_id] = col_value["text"]
+                elif col_type == "location":
+                    # Location needs lat, lng, and address
+                    if parsed_value and "lat" in parsed_value and "lng" in parsed_value:
+                        column_values[dest_col_id] = {
+                            "lat": parsed_value["lat"],
+                            "lng": parsed_value["lng"],
+                            "address": parsed_value.get("address", "")
+                        }
+                elif col_type == "creation_log":
+                    # Skip creation_log - it's auto-generated on the destination board
+                    continue
                 elif col_type == "status":
-                    if parsed_value and "label" in parsed_value:
-                        column_values[col_id] = {"label": parsed_value["label"]}
+                    # Use the text field as the label (this is what Zapier does)
+                    if col_value["text"]:
+                        column_values[dest_col_id] = {"label": col_value["text"]}
+                        # DEBUG: Log what we're sending for completion status
+                        if col_id == "color_mkxvck6q":
+                            logger.info(f"  >> SENDING COMPLETION STATUS to column '{dest_col_id}': {column_values[dest_col_id]}")
                 elif col_type == "date":
                     if parsed_value and "date" in parsed_value:
-                        column_values[col_id] = {"date": parsed_value["date"]}
+                        column_values[dest_col_id] = {"date": parsed_value["date"]}
                 elif col_type == "people":
                     if parsed_value and "personsAndTeams" in parsed_value:
-                        column_values[col_id] = {"personsAndTeams": parsed_value["personsAndTeams"]}
+                        column_values[dest_col_id] = {"personsAndTeams": parsed_value["personsAndTeams"]}
                 elif col_type == "numeric" or col_type == "numbers":
                     if col_value["text"]:
-                        column_values[col_id] = col_value["text"]
+                        column_values[dest_col_id] = col_value["text"]
                 elif col_type == "email":
                     if parsed_value and "email" in parsed_value:
-                        column_values[col_id] = {"email": parsed_value["email"], "text": parsed_value.get("text", "")}
+                        column_values[dest_col_id] = {"email": parsed_value["email"], "text": parsed_value.get("text", "")}
                 elif col_type == "phone":
                     if parsed_value and "phone" in parsed_value:
-                        column_values[col_id] = {"phone": parsed_value["phone"]}
+                        column_values[dest_col_id] = {"phone": parsed_value["phone"]}
                 elif col_type == "link":
                     if parsed_value and "url" in parsed_value:
-                        column_values[col_id] = {"url": parsed_value["url"], "text": parsed_value.get("text", "")}
+                        column_values[dest_col_id] = {"url": parsed_value["url"], "text": parsed_value.get("text", "")}
                 elif col_type == "dropdown":
-                    if parsed_value and "ids" in parsed_value:
-                        column_values[col_id] = {"ids": parsed_value["ids"]}
+                    # For dropdowns, use labels like Zapier does (more reliable than IDs)
+                    if col_value["text"]:
+                        # Split by comma if multiple selections
+                        labels = [label.strip() for label in col_value["text"].split(",")]
+                        if len(labels) == 1:
+                            # Single select dropdown
+                            column_values[dest_col_id] = {"labels": [labels[0]]}
+                        else:
+                            # Multi-select dropdown
+                            column_values[dest_col_id] = {"labels": labels}
                 elif col_type == "checkbox":
                     if parsed_value and "checked" in parsed_value:
-                        column_values[col_id] = {"checked": parsed_value["checked"]}
+                        column_values[dest_col_id] = {"checked": parsed_value["checked"]}
                 elif col_type == "timeline":
                     if parsed_value and "from" in parsed_value:
-                        column_values[col_id] = {"from": parsed_value["from"], "to": parsed_value.get("to")}
+                        column_values[dest_col_id] = {"from": parsed_value["from"], "to": parsed_value.get("to")}
                 elif col_type == "long-text":
                     if col_value["text"]:
-                        column_values[col_id] = {"text": col_value["text"]}
+                        column_values[dest_col_id] = {"text": col_value["text"]}
+                elif col_type == "file":
+                    # File columns need special handling - pass the files array
+                    if parsed_value and "files" in parsed_value:
+                        column_values[dest_col_id] = {"files": parsed_value["files"]}
+                        logger.info(f"  >> FILE COLUMN '{col_id}' -> '{dest_col_id}': {len(parsed_value['files'])} file(s)")
                 else:
                     # For other types, try to use the raw value
                     if col_value["text"]:
-                        column_values[col_id] = col_value["text"]
+                        column_values[dest_col_id] = col_value["text"]
                         
             except (json.JSONDecodeError, KeyError, TypeError) as e:
                 logger.warning(f"Could not parse column {col_id} ({col_type}): {e}")
@@ -265,7 +319,7 @@ class MondaySync:
             dest_lookup = {}
             for item in dest_items:
                 for col_value in item["column_values"]:
-                    if col_value["id"] == "source_item_id":
+                    if col_value["id"] == self.source_item_id_column:
                         source_id = col_value["text"]
                         if source_id:
                             dest_lookup[source_id] = item["id"]
@@ -273,26 +327,23 @@ class MondaySync:
             
             logger.info(f"Found {len(dest_lookup)} existing items in destination board")
             
-            # Process each source item
+            # Process each source item - SEARCH FOR color_mkxvck6q
             for source_item in source_items:
+                # Check if this item has the completion status column
+                has_completion = any(cv["id"] == "color_mkxvck6q" and cv["text"] for cv in source_item["column_values"])
+                if has_completion:
+                    logger.info(f"FOUND ITEM WITH COMPLETION STATUS: {source_item['name']}")
                 try:
-                    # Get the client_id from source item
-                    client_id = None
-                    for col_value in source_item["column_values"]:
-                        if col_value["id"] == self.client_id_column:
-                            client_id = col_value["text"]
-                            break
+                    # Use the Monday.com item ID as the unique identifier
+                    client_id = source_item["id"]
                     
-                    if not client_id:
-                        logger.warning(f"Item '{source_item['name']}' has no client_id, skipping")
-                        stats["items_skipped"] += 1
-                        continue
+                    logger.info(f"Processing item '{source_item['name']}' (ID: {client_id})")
                     
                     # Prepare column values for sync
                     column_values = self.prepare_column_values(source_item, columns_info)
                     
                     # Add the source_item_id to track the relationship
-                    column_values["source_item_id"] = client_id
+                    column_values[self.source_item_id_column] = client_id
                     
                     # Check if item exists in destination
                     if client_id in dest_lookup:
@@ -330,9 +381,9 @@ def main():
     """Main entry point"""
     # Load configuration from environment variables
     api_token = os.getenv("MONDAY_API_TOKEN")
-    source_board_id = os.getenv("SOURCE_BOARD_ID", "18388403129")
+    source_board_id = os.getenv("SOURCE_BOARD_ID", "18269603341")
     dest_board_id = os.getenv("DEST_BOARD_ID", "18399599376")
-    client_id_column = os.getenv("CLIENT_ID_COLUMN", "text_mkxykxdr")
+    source_item_id_column = os.getenv("SOURCE_ITEM_ID_COLUMN", "text_mm034248")
     
     if not api_token:
         logger.error("MONDAY_API_TOKEN environment variable not set!")
@@ -343,7 +394,7 @@ def main():
         api_token=api_token,
         source_board_id=source_board_id,
         dest_board_id=dest_board_id,
-        client_id_column=client_id_column
+        source_item_id_column=source_item_id_column
     )
     
     syncer.sync_boards()
