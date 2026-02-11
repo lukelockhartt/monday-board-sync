@@ -1,0 +1,44 @@
+name: Daily Monday.com Board Sync
+
+on:
+  schedule:
+    # Runs at 2:00 AM UTC every day (adjust timezone as needed)
+    - cron: '0 2 * * *'
+  
+  # Allows manual trigger from GitHub Actions tab
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Run sync script
+        env:
+          MONDAY_API_TOKEN: ${{ secrets.MONDAY_API_TOKEN }}
+          SOURCE_BOARD_ID: ${{ secrets.SOURCE_BOARD_ID }}
+          DEST_BOARD_ID: ${{ secrets.DEST_BOARD_ID }}
+          CLIENT_ID_COLUMN: ${{ secrets.CLIENT_ID_COLUMN }}
+        run: |
+          python monday_sync.py
+      
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-logs-${{ github.run_number }}
+          path: monday_sync.log
+          retention-days: 30
