@@ -2,8 +2,8 @@ name: Daily Monday.com Board Sync
 
 on:
   schedule:
-    # Runs at 2:00 AM UTC every day (adjust timezone as needed)
-    - cron: '0 2 * * *'
+    # Runs every 2 hours (12 times per day) - evenly distributed throughout the day
+    - cron: '0 */2 * * *'
   
   # Allows manual trigger from GitHub Actions tab
   workflow_dispatch:
