@@ -317,15 +317,17 @@ class MondaySync:
             
             # Build a lookup map of destination items by source_item_id
             dest_lookup = {}
+            logger.info(f"Looking for column '{self.source_item_id_column}' in {len(dest_items)} destination items")
             for item in dest_items:
                 for col_value in item["column_values"]:
                     if col_value["id"] == self.source_item_id_column:
                         source_id = col_value["text"]
                         if source_id:
                             dest_lookup[source_id] = item["id"]
+                            logger.debug(f"  Found mapping: source_id={source_id} -> dest_id={item['id']} ({item['name']})")
                         break
             
-            logger.info(f"Found {len(dest_lookup)} existing items in destination board")
+            logger.info(f"Found {len(dest_lookup)} existing items with source_item_id populated")
             
             # Process each source item - SEARCH FOR color_mkxvck6q
             for source_item in source_items:
