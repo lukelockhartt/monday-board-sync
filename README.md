@@ -1,15 +1,24 @@
 # Monday.com Board Sync Script
 
-Automatically syncs data from your Main Board to a duplicate board daily using GitHub Actions (100% free).
+This project keeps two Monday.com boards in sync automatically.
 
-## Overview
+It is built for a workflow where:
+- The **Main Board** is where you and your team actually work (create/update items).
+- A **Duplicate Board** is kept up to date as a "clean" copy for reporting, dashboards, or integrations.
 
-This script:
-1. Pulls all items from the **Main Board** (ID: 18269603341)
-2. Extracts the `column_id` (client ID) from each item
-3. Checks the **Duplicate Board** (ID: 18399599376) for matching `source_item_id`
-4. Updates existing items or creates new ones
-5. Handles all column types (status, people, dates, etc.)
+The sync logic:
+- Pulls all items from the **Main Board** (ID: `18269603341` by default).
+- Reads a specific column that stores your own internal/client ID.
+- Checks the **Duplicate Board** (ID: `18399599376` by default) for matching items via `source_item_id`.
+- Creates new items in the Duplicate Board when they don't exist yet.
+- Updates existing items when they already exist.
+- Copies over all supported column types (status, people, dates, numbers, etc.).
+
+The automation is designed so that:
+- You can **run it locally** while developing/debugging.
+- You can **run it automatically on a schedule** using GitHub Actions (100% free on a public repo).
+
+If you just want to try it out, scroll to **Setup Instructions**. If you're curious about the internals and design decisions, see `PROJECT.md`.
 
 ## Setup Instructions
 
